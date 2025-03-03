@@ -4,18 +4,28 @@ import io
 import base64
 import uuid
 import re
+import jwt
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from sqlalchemy.exc import SQLAlchemyError
+from flask_marshmallow import Marshmallow
+from flask_paginate import Pagination, get_page_args
+import logging
 
 app = Flask(__name__)
 CORS(app)
 
-# Configuration de la base de données
+# Configuration de la clé secrète pour JWT et des paramètres de la base de données
+SECRET_KEY = "votre_cle_secrete"
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tickets.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# Initialisation des extensions
 db = SQLAlchemy(app)
+ma = Marshmallow(app)
+
+# Configuration de la journalisationpo
+logging.basicConfig(level=logging.INFO)
 
 # Définition du modèle Billet
 class Billet(db.Model):
@@ -27,12 +37,21 @@ class Billet(db.Model):
 with app.app_context():
     db.create_all()
 
-# Validation de l'email
+# Schéma Marshmallow pour la validation des données de billet
+class BilletSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = Billet
+
+# Instances des schémas pour un billet unique et plusieurs billets
+billet_schema = BilletSchema()
+billets_schema = BilletSchema(many=True)
+
+# Fonction de validation de l'email
 def validate_email(email):
     regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
     return re.match(regex, email) is not None
 
-# Génération du QR code
+# Fonction pour générer un code QR et le convertir en base64
 def generate_qr_code(data):
     qr = qrcode.make(data)
     img_io = io.BytesIO()
@@ -40,19 +59,41 @@ def generate_qr_code(data):
     img_io.seek(0)
     return base64.b64encode(img_io.getvalue()).decode()
 
+# Décorateur pour vérifier le jeton JWT
+def token_required(f):
+    def decorated(*args, **kwargs):
+        token = request.headers.get('x-access-tokens')
+        if not token:
+            return jsonify({'message': 'Token est manquant'}), 401
+        try:
+            data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        except:
+            return jsonify({'message': 'Token est invalide'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+# Route pour générer un code QR pour un nouveau billet
 @app.route('/generate_qr', methods=['POST'])
+@token_required
 def generate_qr():
     try:
         data = request.json
+        
+        # Validation des données avec Marshmallow
+        errors = billet_schema.validate(data)
+        if errors:
+            return jsonify(errors), 400
         if not data.get('name') or not data.get('email'):
             abort(400, description="Name and email are required.")
         if not validate_email(data['email']):
             abort(400, description="Invalid email format.")
         
+        # Création et sauvegarde du nouveau billet
         billet = Billet(id=str(uuid.uuid4()), name=data['name'], email=data['email'])
         db.session.add(billet)
         db.session.commit()
         
+        # Génération du QR code en base64
         qr_base64 = generate_qr_code(billet.id)
         return jsonify({"id": billet.id, "qr_code": qr_base64})
     except SQLAlchemyError as e:
@@ -61,10 +102,46 @@ def generate_qr():
     except Exception as e:
         abort(500, description="An error occurred.")
 
+# Route pour récupérer tous les billets avec pagination
 @app.route('/tickets', methods=['GET'])
+@token_required
 def get_tickets():
-    tickets = Billet.query.all()
-    return jsonify([{"id": t.id, "name": t.name, "email": t.email} for t in tickets])
+    # Récupération des arguments de pagination
+    page, per_page, offset = get_page_args(page_parameter='page', per_page_parameter='per_page')
+    tickets = Billet.query.offset(offset).limit(per_page).all()
+    pagination = Pagination(page=page, per_page=per_page, total=Billet.query.count(), record_name='tickets')
+    result = billets_schema.dump(tickets)
+    return jsonify({'tickets': result, 'pagination': pagination.info})
+
+# Route pour mettre à jour un billet existant par son ID
+@app.route('/update_ticket/<id>', methods=['PUT'])
+@token_required
+def update_ticket(id):
+    data = request.json
+    billet = Billet.query.get(id)
+    if not billet:
+        return jsonify({"error": "Billet non trouvé"}), 404
+    billet.name = data.get('name', billet.name)
+    billet.email = data.get('email', billet.email)
+    db.session.commit()
+    return jsonify({"message": "Billet mis à jour"})
+
+# Route pour supprimer un billet existant par son ID
+@app.route('/delete_ticket/<id>', methods=['DELETE'])
+@token_required
+def delete_ticket(id):
+    billet = Billet.query.get(id)
+    if not billet:
+        return jsonify({"error": "Billet non trouvé"}), 404
+    db.session.delete(billet)
+    db.session.commit()
+    return jsonify({"message": "Billet supprimé"})
+
+# Gestionnaire global des erreurs pour journaliser les erreurs
+@app.errorhandler(Exception)
+def handle_error(e):
+    logging.error(f'Error: {str(e)}')
+    return jsonify({'error': 'Something went wrong!'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
