@@ -24,7 +24,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 ma = Marshmallow(app)
 
-# Configuration de la journalisationpo
+# Configuration de la journalisation
 logging.basicConfig(level=logging.INFO)
 
 # Définition du modèle Billet
@@ -73,7 +73,7 @@ def token_required(f):
     return decorated
 
 # Route pour générer un code QR pour un nouveau billet
-@app.route('/generate_qr', methods=['POST'])
+@app.route('/generate_qr', methods=['POST'], endpoint='generate_qr')
 @token_required
 def generate_qr():
     try:
@@ -103,7 +103,7 @@ def generate_qr():
         abort(500, description="An error occurred.")
 
 # Route pour récupérer tous les billets avec pagination
-@app.route('/tickets', methods=['GET'])
+@app.route('/tickets', methods=['GET'], endpoint='get_tickets')
 @token_required
 def get_tickets():
     # Récupération des arguments de pagination
@@ -114,7 +114,7 @@ def get_tickets():
     return jsonify({'tickets': result, 'pagination': pagination.info})
 
 # Route pour mettre à jour un billet existant par son ID
-@app.route('/update_ticket/<id>', methods=['PUT'])
+@app.route('/update_ticket/<id>', methods=['PUT'], endpoint='update_ticket')
 @token_required
 def update_ticket(id):
     data = request.json
@@ -127,7 +127,7 @@ def update_ticket(id):
     return jsonify({"message": "Billet mis à jour"})
 
 # Route pour supprimer un billet existant par son ID
-@app.route('/delete_ticket/<id>', methods=['DELETE'])
+@app.route('/delete_ticket/<id>', methods=['DELETE'], endpoint='delete_ticket')
 @token_required
 def delete_ticket(id):
     billet = Billet.query.get(id)
@@ -141,7 +141,4 @@ def delete_ticket(id):
 @app.errorhandler(Exception)
 def handle_error(e):
     logging.error(f'Error: {str(e)}')
-    return jsonify({'error': 'Something went wrong!'}), 500
-
-if __name__ == '__main__':
-    app.run(debug=True)
+    return jsonify({'error': 'An error occurred'}), 500
