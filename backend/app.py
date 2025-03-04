@@ -41,6 +41,8 @@ with app.app_context():
 class BilletSchema(ma.SQLAlchemyAutoSchema):
     class Meta:
         model = Billet
+        include_relationships = True  # Inclure les relations
+        load_instance = True          # Charger l'instance
 
 # Instances des schémas pour un billet unique et plusieurs billets
 billet_schema = BilletSchema()
@@ -67,7 +69,9 @@ def token_required(f):
             return jsonify({'message': 'Token est manquant'}), 401
         try:
             data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        except:
+        except jwt.ExpiredSignatureError:
+            return jsonify({'message': 'Token a expiré'}), 401
+        except jwt.InvalidTokenError:
             return jsonify({'message': 'Token est invalide'}), 401
         return f(*args, **kwargs)
     return decorated
@@ -77,30 +81,37 @@ def token_required(f):
 @token_required
 def generate_qr():
     try:
-        data = request.json
-        
+        data = request.get_json()
+
         # Validation des données avec Marshmallow
         errors = billet_schema.validate(data)
         if errors:
             return jsonify(errors), 400
+
+        # Vérification si le nom et l'email sont présents
         if not data.get('name') or not data.get('email'):
-            abort(400, description="Name and email are required.")
+            return jsonify({"message": "Name and email are required."}), 400
+
+        # Validation de l'email
         if not validate_email(data['email']):
-            abort(400, description="Invalid email format.")
-        
+            return jsonify({"message": "Invalid email format."}), 400
+
         # Création et sauvegarde du nouveau billet
         billet = Billet(id=str(uuid.uuid4()), name=data['name'], email=data['email'])
         db.session.add(billet)
         db.session.commit()
-        
+
         # Génération du QR code en base64
         qr_base64 = generate_qr_code(billet.id)
         return jsonify({"id": billet.id, "qr_code": qr_base64})
+
     except SQLAlchemyError as e:
         db.session.rollback()
-        abort(500, description="Database error.")
+        logging.error(f"Database error: {str(e)}")
+        return jsonify({'error': 'Database error'}), 500
     except Exception as e:
-        abort(500, description="An error occurred.")
+        logging.error(f"An error occurred: {str(e)}")
+        return jsonify({'error': 'An error occurred'}), 500
 
 # Route pour récupérer tous les billets avec pagination
 @app.route('/tickets', methods=['GET'], endpoint='get_tickets')
@@ -117,10 +128,16 @@ def get_tickets():
 @app.route('/update_ticket/<id>', methods=['PUT'], endpoint='update_ticket')
 @token_required
 def update_ticket(id):
-    data = request.json
+    data = request.get_json()
     billet = Billet.query.get(id)
     if not billet:
         return jsonify({"error": "Billet non trouvé"}), 404
+
+    # Validation des données avec Marshmallow
+    errors = billet_schema.validate(data, partial=True)  # partial=True permet de valider partiellement
+    if errors:
+        return jsonify(errors), 400
+
     billet.name = data.get('name', billet.name)
     billet.email = data.get('email', billet.email)
     db.session.commit()
@@ -142,3 +159,6 @@ def delete_ticket(id):
 def handle_error(e):
     logging.error(f'Error: {str(e)}')
     return jsonify({'error': 'An error occurred'}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True)
