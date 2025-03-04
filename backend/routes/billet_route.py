@@ -8,6 +8,7 @@ import jwt
 from flask_marshmallow import Marshmallow
 import logging
 from flask_paginate import Pagination, get_page_args
+from app import validate_email  # Import de la fonction validate_email depuis app.py
 
 # Configuration de la clé secrète pour JWT et de la journalisation
 SECRET_KEY = "votre_cle_secrete"
@@ -51,6 +52,12 @@ def generate_qr():
         return jsonify(errors), 400
     # Création d'un nouvel objet Billet avec des données uniques
     billet = Billet(id=str(uuid.uuid4()), name=data['name'], email=data['email'])
+    
+    if not data.get('name') or not data.get('email'):
+        return jsonify({"message": "Name and email are required."}), 400
+    if not validate_email(data['email']):
+        return jsonify({"message": "Invalid email format."}), 400
+    
     db.session.add(billet)
     db.session.commit()
     
