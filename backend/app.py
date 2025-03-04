@@ -16,7 +16,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Configuration de la clé secrète pour JWT et des paramètres de la base de données
-SECRET_KEY = "votre_cle_secrete"
+SECRET_KEY = "letogolais56z@"
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tickets.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 

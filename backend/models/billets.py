@@ -3,7 +3,6 @@ from validate_email import validate_email
 import uuid
 from datetime import datetime
 
-
 db = SQLAlchemy()
 
 class Billet(db.Model):

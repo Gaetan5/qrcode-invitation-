@@ -1,4 +1,4 @@
-from flask import Blueprint, app, request, jsonify
+from flask import Blueprint, current_app, request, jsonify
 from models.billets import Billet, db
 import qrcode
 import io
@@ -11,11 +11,11 @@ from flask_paginate import Pagination, get_page_args
 from app import validate_email  # Import de la fonction validate_email depuis app.py
 
 # Configuration de la clé secrète pour JWT et de la journalisation
-SECRET_KEY = "votre_cle_secrete"
+SECRET_KEY = "letogolais56z@"
 logging.basicConfig(level=logging.INFO)
 
 # Initialisation de Marshmallow
-ma = Marshmallow(app)
+ma = Marshmallow(current_app)
 
 # Schéma Marshmallow pour la validation des billets
 class BilletSchema(ma.SQLAlchemyAutoSchema):
@@ -37,7 +37,9 @@ def token_required(f):
             return jsonify({'message': 'Token est manquant'}), 401
         try:
             data = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        except:
+        except jwt.ExpiredSignatureError:
+            return jsonify({'message': 'Token a expiré'}), 401
+        except jwt.InvalidTokenError:
             return jsonify({'message': 'Token est invalide'}), 401
         return f(*args, **kwargs)
     return decorated
@@ -106,7 +108,7 @@ def delete_ticket(id):
     return jsonify({"message": "Billet supprimé"})
 
 # Gestionnaire global des erreurs pour journaliser les erreurs
-@app.errorhandler(Exception)
+@ticket_bp.errorhandler(Exception)
 def handle_error(e):
     logging.error(f'Error: {str(e)}')
     return jsonify({'error': 'Something went wrong!'}), 500

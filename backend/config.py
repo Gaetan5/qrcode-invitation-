@@ -27,10 +27,3 @@ config = {
     'development': DevelopmentConfig,
     'testing': TestingConfig
 }
-
-#
-# The code snippet above shows the configuration settings for the Flask application. 
-# The Config class is the base class that contains the common configuration settings for the application. 
-# The ProductionConfig, DevelopmentConfig, and TestingConfig classes inherit from the Config class and override 
-# the configuration settings as needed for the respective environments. The config dictionary maps the environment 
-# names to their corresponding configuration classes.
